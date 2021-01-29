@@ -401,6 +401,16 @@ static jcv_point random_point(const jcv_site *site, const jcv_graphedge *edge, b
     float a1 = uniform_random();
     float a2 = uniform_random();
 
+    if (a1+a2 > 1.0)
+    {
+        a1 = 1.0 - a2;
+        a2 = 1.0 - a1;
+    }
+    // printf("generate random points\n");
+    // printf("site: %f %f\n",site_point.x, site_point.y);
+    // printf("st: %f %f\n", edge->pos[0].x, edge->pos[0].y);
+    // printf("ed: %f %f\n", edge->pos[1].x, edge->pos[1].y);
+    //printf("a1, a2: %f %f\n");
     jcv_point v1;
     v1.x = site_point.x - edge->pos[0].x;
     v1.y = site_point.y - edge->pos[0].y;
@@ -410,12 +420,14 @@ static jcv_point random_point(const jcv_site *site, const jcv_graphedge *edge, b
     v2.y = edge->pos[1].y - edge->pos[0].y;
 
     jcv_point off;
-    off.x = v1.x*a1 + (1-a1)*a2*v2.x;
-    off.y = v1.y*a1 + (1-a1)*a2*v2.y;
+    off.x = v1.x*a1 + v2.x*a2;
+    off.y = v1.y*a1 + v2.y*a2;
 
     jcv_point result;
-    result.x = edge->pos[0].x + off.x;
-    result.y = edge->pos[1].y + off.y;
+    float alter_ratio = 0.4;
+    result.x = edge->pos[0].x + off.x*alter_ratio;
+    result.y = edge->pos[0].y + off.y*alter_ratio;
+    // printf("result: %f %f\n", result.x, result.y);
 
     return result;
 }
@@ -450,21 +462,10 @@ static alter_points generate_alter_points(std::unordered_map<std::string, alter_
         new_pt = random_point(site, edge, is_neighbor);
         points.push_back(new_pt);
     }
-    auto compare_func = [=](jcv_point a, jcv_point b) {
-        jcv_point off_axis;
-        off_axis.x = edge->pos[1].x - edge->pos[0].x;
-        off_axis.y = edge->pos[1].y - edge->pos[0].y;
-
-        jcv_point off_a;
-        off_a.x = a.x - edge->pos[0].x;
-        off_a.y = a.y - edge->pos[0].y;
-        float a_dis = off_axis.x*off_a.x + off_axis.y*off_a.y;
-
-        jcv_point off_b;
-        off_b.x = b.x - edge->pos[0].x;
-        off_b.y = b.y - edge->pos[0].y;
-        float  b_dis = off_axis.x*off_b.x + off_axis.y*off_b.y;
-        return a_dis < b_dis;
+    auto compare_func = [=](jcv_point p, jcv_point q) {
+        jcv_point s = site->p;
+        float area2 = p.x*q.y - p.y*q.x + q.x*s.y - q.y*s.x + s.x*p.y - s.y*p.x;
+        return area2 > 0;
     };
     std::sort(points.begin(), points.end(), compare_func);
     // 将生成的points插入 hash_map
@@ -472,15 +473,23 @@ static alter_points generate_alter_points(std::unordered_map<std::string, alter_
     return points;
 }
 // 创建一个函数将site和edge数据存储起来
-static void store_voronoi_diagram(jcv_diagram diagram)
+static void store_voronoi_diagram(jcv_diagram diagram, size_t width, size_t height)
 {
+    size_t alter_imagesize = (size_t)(width*height*3);
+    unsigned char* alter_image = (unsigned char*)malloc(alter_imagesize);
+    memset(alter_image, 0, alter_imagesize);
+
+    jcv_point dimensions;
+    dimensions.x = (jcv_real)width;
+    dimensions.y = (jcv_real)height;
+
     FILE* voronoi_file = fopen("voronoi_file", "w+");
     // 首先存储site
     const jcv_site* sites = jcv_diagram_get_sites( &diagram );
     // 创建key：相邻site的hash，和vector:为新生成的点
     std::unordered_map<std::string, alter_points> hash_table;
     size_t test_cnt = 0;
-
+    size_t site_cnt = 0;
     for ( int i = 0; i < diagram.numsites; ++i)
     {
         const jcv_site* site = &sites[i];
@@ -491,19 +500,73 @@ static void store_voronoi_diagram(jcv_diagram diagram)
         }
         // 控制点
         fprintf(voronoi_file, "%f %f\n", site->p.x, site->p.y);
-        printf("site: %f %f\n", site->p.x, site->p.y);
+        // printf("site: %f %f\n", site->p.x, site->p.y);
         // 输入文件对应点的index
         fprintf(voronoi_file, "%d\n", site->index);
         // 边
         const jcv_graphedge* e = site->edges;
         bool is_first_edge = true;
 
+        // 测试代码
+        site_cnt += 1;
+        // if(site_cnt != 5)
+        //     continue;
+        
+        unsigned char color_tri[3];
+        unsigned char basecolor = 120;
+        color_tri[0] = basecolor + (unsigned char)(rand() % (235 - basecolor));
+        color_tri[1] = basecolor + (unsigned char)(rand() % (235 - basecolor));
+        color_tri[2] = basecolor + (unsigned char)(rand() % (235 - basecolor));
+
+        std::vector<jcv_point> edge_pts;
+        jcv_point s = remap(
+            &site->p,
+            &diagram.min,
+            &diagram.max,
+            &dimensions
+        );
         while(e)
         {
+            // 绘制triangle
+            size_t tri_idx = 0;
+            for(auto it = edge_pts.begin(); it != (edge_pts.end()-1); it++)
+            {
+                if (edge_pts.size() <= 0)
+                    break;
+                
+                tri_idx += 1;
+                // if (tri_idx != 2)
+                //     continue;
+                
+                jcv_point pos0 = *it;
+                jcv_point pos1 = *(it+1);
+                jcv_point p0 = remap(
+                    &pos0,
+                    &diagram.min,
+                    &diagram.max,
+                    &dimensions
+                );
+                jcv_point p1 = remap(
+                    &pos1,
+                    &diagram.min,
+                    &diagram.max,
+                    &dimensions
+                );
+                // printf("in draw triangle :\n");
+                // printf("site: %f %f\n", site->p.x, site->p.y);
+                // printf("p0: %f %f\n", pos0.x, pos0.y);
+                // printf("p1: %f %f\n", pos1.x, pos1.y);
+                draw_triangle(
+                    &s, &p0, &p1, alter_image, width, height, 3, color_tri
+                );
+            }
+
+            edge_pts.clear();
             bool is_new = false;
             if (is_first_edge)
             {
                 fprintf(voronoi_file, "%f %f\n", e->pos[0].x, e->pos[0].y);
+                edge_pts.push_back(e->pos[0]);
                 is_first_edge = false;
             }
             bool is_last_edge = false;
@@ -511,46 +574,95 @@ static void store_voronoi_diagram(jcv_diagram diagram)
                 is_last_edge = false;
             else
                 is_last_edge = true;
-            printf("edge: \n");
-            printf("start: %f %f\n", e->pos[0].x, e->pos[0].y);
-            printf("end: %f %f\n", e->pos[1].x, e->pos[1].y);
-            if (!is_last_edge)
+
+            // printf("edge: \n");
+            // printf("start: %f %f\n", e->pos[0].x, e->pos[0].y);
+            // printf("end: %f %f\n", e->pos[1].x, e->pos[1].y);
+
+            edge_pts.push_back(e->pos[0]);
+            alter_points points = generate_alter_points(
+                hash_table,
+                site,
+                e,
+                is_new
+            );
+
+            if(is_new)
             {
-                alter_points points = generate_alter_points(
-                    hash_table,
-                    site,
-                    e,
-                    is_new
-                );
-                if(is_new)
+                // 正序
+                for (auto it=points.begin(); it != points.end(); it++)
                 {
-                    // 正序
-                    for (auto it=points.begin(); it != points.end(); it++)
-                    {
-                        fprintf(voronoi_file, "%f %f\n", it->x, it->y);
-                        printf("insert pt: %f %f\n", it->x, it->y);
-                        test_cnt++;
-                    }
+                    fprintf(voronoi_file, "%f %f\n", it->x, it->y);
+                    edge_pts.push_back(*it);
+                    // printf("insert pt: %f %f\n", it->x, it->y);
+                    test_cnt++;
                 }
-                else
+            }
+            else
+            {
+                // 倒序
+                for (auto it=points.crbegin(); it != points.crend(); it++)
                 {
-                    // 倒序
-                    for (auto it=points.crbegin(); it != points.crend(); it++)
-                    {
-                        fprintf(voronoi_file, "%f %f\n", it->x, it->y);
-                        printf("insert pt: %f %f\n", it->x, it->y);
-                        test_cnt++;
-                    }
+                    fprintf(voronoi_file, "%f %f\n", it->x, it->y);
+                    edge_pts.push_back(*it);
+                    // printf("insert pt: %f %f\n", it->x, it->y);
+                    test_cnt++;
                 }
-                
+            }
+            edge_pts.push_back(e->pos[1]);
+
+            if (!is_last_edge)
+            {   
                 fprintf(voronoi_file, "%f %f\n", e->pos[1].x, e->pos[1].y);
             }
             e = e->next;
         }
+
+        for(auto it = edge_pts.begin(); it != (edge_pts.end()-1); it++)
+        {
+            jcv_point pos0 = *it;
+            jcv_point pos1 = *(it+1);
+            jcv_point p0 = remap(
+                &pos0,
+                &diagram.min,
+                &diagram.max,
+                &dimensions
+            );
+            jcv_point p1 = remap(
+                &pos1,
+                &diagram.min,
+                &diagram.max,
+                &dimensions
+            );
+            // printf("out draw triangle :\n");
+            // printf("p0: %f %f\n", pos0.x, pos0.y);
+            // printf("p1: %f %f\n", pos1.x, pos1.y);
+            draw_triangle(
+                &s, &p0, &p1, alter_image, width, height, 3, color_tri
+            );
+        }
+        // break;
         fprintf(voronoi_file, "\n");
     }
     printf("insert pts cnt :%zu\n", test_cnt);
     fclose(voronoi_file);
+
+    // flip image
+    int stride = width*3;
+    // uint8_t* row = (uint8_t*)malloc((size_t)stride);
+    // for( int y = 0; y < height/2; ++y )
+    // {
+    //     memcpy(row, &alter_image[y*stride], (size_t)stride);
+    //     memcpy(&alter_image[y*stride], &alter_image[(height-1-y)*stride], (size_t)stride);
+    //     memcpy(&alter_image[(height-1-y)*stride], row, (size_t)stride);
+    // }
+
+    char path[512];
+    sprintf(path, "%s", "alter_img.png");
+    wrap_stbi_write_png(path, width, height, 3, alter_image, stride);
+    printf("wrote %s\n", path);
+
+    free(alter_image);
 }
 
 int main(int argc, const char** argv)
@@ -789,7 +901,7 @@ int main(int argc, const char** argv)
             draw_line((int)p0.x, (int)p0.y, (int)p1.x, (int)p1.y, image, width, height, 3, color_line);
             edge = jcv_diagram_get_next_edge(edge);
         }
-        store_voronoi_diagram(diagram);
+        store_voronoi_diagram(diagram, width, height);
         jcv_diagram_free( &diagram );
     }
 
