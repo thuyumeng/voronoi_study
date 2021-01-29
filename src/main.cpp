@@ -54,7 +54,7 @@ int wrap_stbi_write_png(char const *filename, int w, int h, int comp, const void
 #endif
 
 
-static int num_pts = 5;
+static int num_pts = 10;
 
 static void plot(int x, int y, unsigned char* image, int width, int height, int nchannels, unsigned char* color)
 {
@@ -469,7 +469,7 @@ static jcv_point random_point(const jcv_point st_p, jcv_point ed_p, jcv_point si
     off.y = v1.y*a1 + v2.y*a2;
 
     jcv_point result;
-    float alter_ratio = 1.0;
+    float alter_ratio = 0.4;
     result.x = st_p.x + off.x*alter_ratio;
     result.y = st_p.y + off.y*alter_ratio;
     // printf("result: %f %f\n", result.x, result.y);
@@ -488,6 +488,13 @@ void iter_generate_points(jcv_point p,jcv_point end_p, jcv_point site0, jcv_poin
     // 递归升成点的函数
     if (total == 0)
         return;
+    
+    // 如果非凸包则不生成点
+    float a0 = area2(site0, site1, p);
+    float a1 = area2(site0, site1, end_p);
+    if (a0*a1 >= 0.0)
+        return;
+    
     total = total - 1;
     
     bool is_neighbor = (rand() % 2 > 0);
@@ -519,47 +526,17 @@ static alter_points generate_alter_points(std::unordered_map<std::string, alter_
     if(edge->neighbor == nullptr)
         return points;
 
-    // 分为两步： 1、边和两个sites的顶点不构成凸包
-    //          2、构成凸包的情况
-    // 判断边的亮点是否在sites的两侧，来作为凸包的准则
-    float a0 = area2(site->p, edge->neighbor->p, edge->pos[0]);
-    float a1 = area2(site->p, edge->neighbor->p, edge->pos[1]);
-    if (a0*a1 >= 0.0)
-    {
-        // 非凸包情况只生成1个中间点
-        // jcv_point new_pt;
-        // bool is_neighbor = (rand() % 2 > 0);
-        // new_pt = random_point(site, edge, is_neighbor);
-        // for(;;)
-        // {
-        //     //检查是否new_pt到edge end_pt
-        //     jcv_point end_pt = edge->pos[1];
-        //     float a0 = area2(new_pt, end_pt, site->p);
-        //     float a1 = area2(new_pt, end_pt, edge->neighbor->p);
-        //     if (a0*a1<0)
-        //         break;
-        //     else {
-        //         float new_x = (new_pt.x + edge->pos[0].x) * 0.5;
-        //         float new_y = (new_pt.y + edge->pos[0].y) * 0.5;
-        //         new_pt.x = new_x;
-        //         new_pt.y = new_y;
-        //     }
-        // }
-        // points.push_back(new_pt);
-    } else {
-        // 凸包情况递归生成点
-        jcv_point site0 = site->p;
-        jcv_point site1 = edge->neighbor->p;
-        size_t total = rand() % num_pts + 1;
-        iter_generate_points(
-            edge->pos[0],
-            edge->pos[1],
-            site0,
-            site1,
-            total,
-            points
-        );
-    }
+    jcv_point site0 = site->p;
+    jcv_point site1 = edge->neighbor->p;
+    size_t total = rand() % num_pts + 5;
+    iter_generate_points(
+        edge->pos[0],
+        edge->pos[1],
+        site0,
+        site1,
+        total,
+        points
+    );
     // size_t max_t = 3;
     // size_t p_cnt = rand() % max_t + 1;
     // for (size_t i=0; i<p_cnt; i++)
