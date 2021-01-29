@@ -469,7 +469,7 @@ static jcv_point random_point(const jcv_point st_p, jcv_point ed_p, jcv_point si
     off.y = v1.y*a1 + v2.y*a2;
 
     jcv_point result;
-    float alter_ratio = 0.4;
+    float alter_ratio = 0.35;
     result.x = st_p.x + off.x*alter_ratio;
     result.y = st_p.y + off.y*alter_ratio;
     // printf("result: %f %f\n", result.x, result.y);
@@ -483,7 +483,7 @@ float area2(jcv_point p, jcv_point q, jcv_point s)
 }
 
 using alter_points = std::vector<jcv_point>;
-void iter_generate_points(jcv_point p,jcv_point end_p, jcv_point site0, jcv_point site1, size_t total, alter_points &points)
+void iter_generate_points(jcv_point p,jcv_point end_p, jcv_point site0, jcv_point site1, size_t total, alter_points &points, bool is_neighbor)
 {
     // 递归升成点的函数
     if (total == 0)
@@ -497,15 +497,17 @@ void iter_generate_points(jcv_point p,jcv_point end_p, jcv_point site0, jcv_poin
     
     total = total - 1;
     
-    bool is_neighbor = (rand() % 2 > 0);
     jcv_point site_point;
     if (is_neighbor)
         site_point = site1;
     else
         site_point = site0;
+    // printf("site0: %f %f\n",site0.x, site0.y);
+    // printf("site1: %f %f\n",site1.x, site1.y);
+    // printf("check site_point: %f %f\n", site_point.x, site_point.y);
     jcv_point new_pt = random_point(p, end_p, site_point);
     points.push_back(new_pt);
-    iter_generate_points(new_pt, end_p, site0, site1, total, points);
+    iter_generate_points(new_pt, end_p, site0, site1, total, points, is_neighbor);
 }
 
 // 根据graphedge构造一个生成边界点的函数
@@ -529,13 +531,15 @@ static alter_points generate_alter_points(std::unordered_map<std::string, alter_
     jcv_point site0 = site->p;
     jcv_point site1 = edge->neighbor->p;
     size_t total = rand() % num_pts + 5;
+    bool is_neighbor = (rand() % 2 > 0);
     iter_generate_points(
         edge->pos[0],
         edge->pos[1],
         site0,
         site1,
         total,
-        points
+        points,
+        is_neighbor
     );
     // size_t max_t = 3;
     // size_t p_cnt = rand() % max_t + 1;
