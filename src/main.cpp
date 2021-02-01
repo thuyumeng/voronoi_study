@@ -54,7 +54,7 @@ int wrap_stbi_write_png(char const *filename, int w, int h, int comp, const void
 #endif
 
 
-static int num_pts = 10;
+static int num_pts = 5;
 
 static void plot(int x, int y, unsigned char* image, int width, int height, int nchannels, unsigned char* color)
 {
@@ -469,7 +469,7 @@ static jcv_point random_point(const jcv_point st_p, jcv_point ed_p, jcv_point si
     off.y = v1.y*a1 + v2.y*a2;
 
     jcv_point result;
-    float alter_ratio = 0.35;
+    float alter_ratio = 0.25;
     result.x = st_p.x + off.x*alter_ratio;
     result.y = st_p.y + off.y*alter_ratio;
     // printf("result: %f %f\n", result.x, result.y);
@@ -496,6 +496,10 @@ void iter_generate_points(jcv_point p,jcv_point end_p, jcv_point site0, jcv_poin
         return;
     
     total = total - 1;
+    if (total % 3 == 0)
+    {
+        is_neighbor = not is_neighbor;
+    }
     
     jcv_point site_point;
     if (is_neighbor)
@@ -530,7 +534,7 @@ static alter_points generate_alter_points(std::unordered_map<std::string, alter_
 
     jcv_point site0 = site->p;
     jcv_point site1 = edge->neighbor->p;
-    size_t total = rand() % num_pts + 5;
+    size_t total = rand() % num_pts + 2;
     bool is_neighbor = (rand() % 2 > 0);
     iter_generate_points(
         edge->pos[0],
