@@ -11,6 +11,8 @@ VERSION
 #include <stdint.h>
 #include <stdio.h> // printf
 #include <stdbool.h>
+#include <math.h>
+
 #include <iostream>
 #include <string>
 #include <functional>
@@ -55,6 +57,7 @@ int wrap_stbi_write_png(char const *filename, int w, int h, int comp, const void
 
 
 static int num_pts = 5;
+static float epsilon = 0.01;
 
 static void plot(int x, int y, unsigned char* image, int width, int height, int nchannels, unsigned char* color)
 {
@@ -391,90 +394,18 @@ static float uniform_random()
     return r;
 }
 
-// static jcv_point random_point(const jcv_site *site, const jcv_graphedge *edge, bool is_neighbor)
-// {
-//     jcv_point site_point;
-//     if(!is_neighbor)
-//     {
-//         site_point = site->p;
-//     } else {
-//         site_point = edge->neighbor->p;
-//     }
-
-//     float epsilon = 0.02;
-//     float a1 = uniform_random();
-//     float a2 = uniform_random();
-//     a1 = a1 > 0 ? a1 : epsilon;
-//     a2 = a2 > 0 ? a2 : epsilon;
-
-//     if (a1+a2 > 1.0)
-//     {
-//         a1 = 1.0 - a2;
-//         a2 = 1.0 - a1;
-//     }
-//     // printf("generate random points\n");
-//     // printf("site: %f %f\n",site_point.x, site_point.y);
-//     // printf("st: %f %f\n", edge->pos[0].x, edge->pos[0].y);
-//     // printf("ed: %f %f\n", edge->pos[1].x, edge->pos[1].y);
-//     //printf("a1, a2: %f %f\n");
-//     jcv_point v1;
-//     v1.x = site_point.x - edge->pos[0].x;
-//     v1.y = site_point.y - edge->pos[0].y;
-
-//     jcv_point v2;
-//     v2.x = edge->pos[1].x - edge->pos[0].x;
-//     v2.y = edge->pos[1].y - edge->pos[0].y;
-
-//     jcv_point off;
-//     off.x = v1.x*a1 + v2.x*a2;
-//     off.y = v1.y*a1 + v2.y*a2;
-
-//     jcv_point result;
-//     float alter_ratio = 0.4;
-//     result.x = edge->pos[0].x + off.x*alter_ratio;
-//     result.y = edge->pos[0].y + off.y*alter_ratio;
-//     // printf("result: %f %f\n", result.x, result.y);
-
-//     return result;
-// }
-
-static jcv_point random_point(const jcv_point st_p, jcv_point ed_p, jcv_point site_p)
+static float random_between(float a, float b)
 {
-    float epsilon = 0.2;
-    float a1 = uniform_random();
-    float a2 = uniform_random();
-    a1 = a1 > epsilon ? a1 : epsilon;
-    a2 = a2 > epsilon ? a2 : epsilon;
-
-    if (a1+a2 > 1.0)
+    if (a == b)
+        return a;
+    if (a > b)
     {
-        a1 = 1.0 - a2;
-        a2 = 1.0 - a1;
+        float temp = a;
+        a = b;
+        b = temp;
     }
-    // printf("generate random points\n");
-    // printf("site: %f %f\n",site_point.x, site_point.y);
-    // printf("st: %f %f\n", edge->pos[0].x, edge->pos[0].y);
-    // printf("ed: %f %f\n", edge->pos[1].x, edge->pos[1].y);
-    //printf("a1, a2: %f %f\n");
-    jcv_point v1;
-    v1.x = site_p.x - st_p.x;
-    v1.y = site_p.y - st_p.y;
-
-    jcv_point v2;
-    v2.x = ed_p.x - st_p.x;
-    v2.y = ed_p.y - st_p.y;
-
-    jcv_point off;
-    off.x = v1.x*a1 + v2.x*a2;
-    off.y = v1.y*a1 + v2.y*a2;
-
-    jcv_point result;
-    float alter_ratio = 0.25;
-    result.x = st_p.x + off.x*alter_ratio;
-    result.y = st_p.y + off.y*alter_ratio;
-    // printf("result: %f %f\n", result.x, result.y);
-
-    return result;
+    float r = uniform_random() * (b - a) + a;
+    return r;
 }
 
 float area2(jcv_point p, jcv_point q, jcv_point s)
@@ -482,17 +413,153 @@ float area2(jcv_point p, jcv_point q, jcv_point s)
     return p.x*q.y - p.y*q.x + q.x*s.y - q.y*s.x + s.x*p.y - s.y*p.x;
 }
 
+bool to_left(jcv_point st_p, jcv_point ed_p, jcv_point p)
+{
+    return area2(st_p, ed_p, p) < 0;
+}
+
+bool in_triangle(const jcv_point a, const jcv_point b, const jcv_point c, const jcv_point p)
+{
+    bool a1 = to_left(a, b, p);
+    bool a2 = to_left(b, c, p);
+    bool a3 = to_left(c, a, p);
+
+    if (a1)
+    {
+        if (a2 && a3)
+            return true;
+        else
+            return false;
+    } else {
+        if ((!a2) && (!a3))
+            return true;
+        else
+            return false;
+    }
+}
+
+float distance(jcv_point p, jcv_point q)
+{
+    return sqrt((p.x-q.x)*(p.x-q.x) + (p.y-q.y)*(p.y-q.y));
+}
+
+// 判断产生的点是否在多边形中,然后不断迭代产生点
+static jcv_point generate_point_in_poly(const jcv_point st_p, const jcv_point ed_p, const jcv_point site0, const jcv_point site1, jcv_point off_vec)
+{
+    jcv_point new_point;
+    new_point.x = st_p.x + off_vec.x;
+    new_point.y = st_p.y + off_vec.y;
+    // printf("generate_point_in_poly: \n");
+    // printf("new_point: %f %f\n", new_point.x, new_point.y);
+    // printf("st_p: %f %f\n", st_p.x, st_p.y);
+    // printf("ed_p: %f %f\n", ed_p.x, ed_p.y);
+    // printf("site0: %f %f\n", site0.x, site0.y);
+    // printf("site1: %f %f\n", site1.x, site1.y);
+    // printf("off_vec: %f %f\n", off_vec.x, off_vec.y);
+    if(in_triangle(st_p, site0, ed_p, new_point) ||
+       in_triangle(st_p, site1, ed_p, new_point))
+       return new_point;
+    
+    float alter_ratio = 0.5;
+    off_vec.x = off_vec.x * alter_ratio;
+    off_vec.y = off_vec.y * alter_ratio;
+
+    new_point = generate_point_in_poly(
+        st_p,
+        ed_p,
+        site0,
+        site1,
+        off_vec
+    );
+    return new_point;
+}
+
+static jcv_point normalize(const jcv_point st_p, const jcv_point ed_p)
+{
+    float length = distance(st_p, ed_p);
+    jcv_point normalize_vec;
+    normalize_vec.x = (ed_p.x - st_p.x) / length;
+    normalize_vec.y = (ed_p.y - st_p.y) / length;
+    return normalize_vec;
+}
+
+static jcv_point random_point(const jcv_point st_p, 
+                              const jcv_point ed_p,
+                              const jcv_point site0, 
+                              const jcv_point site1, 
+                              float max_length,
+                              bool is_neighbor)
+{
+    
+    // 设置偏移向量
+    jcv_point half_pt;
+    half_pt.x = (site0.x + site1.x)*0.5;
+    half_pt.y = (site0.y + site1.y)*0.5;
+    
+    float sign = -1.0;
+    if (is_neighbor)
+        sign = 1.0;
+    
+    float min_ratio = 0.01;
+    float max_ratio = 0.2;
+    float alter_ratio = random_between(min_ratio, max_ratio);
+
+    // printf("random_point :\n");
+    // printf("alter_ratio: %f\n", alter_ratio);
+    // printf("start_p: %f %f\n", st_p.x, st_p.y);
+    // printf("end_p: %f %f\n", ed_p.x, ed_p.y);
+    // printf("site0: %f %f\n",site0.x, site0.y);
+    // printf("site1: %f %f\n",site1.x, site1.y);
+    // 在site0和site1的线段上取一点，和st_p链接做终点
+    jcv_point dir_vec = normalize(site0, site1);
+    float length = distance(site0, site1) * 0.5;
+    jcv_point t_p;
+    t_p.x = half_pt.x + dir_vec.x * alter_ratio * length * sign;
+    t_p.y = half_pt.y + dir_vec.y * alter_ratio * length * sign;
+    // printf("t_p: %f %f\n", t_p.x, t_p.y);
+    // 查看st_p,ed_p, site0, site1是否为凸包
+    bool is_left = to_left(site0, site1, st_p);
+    jcv_point vec_st, vec_ed;
+    if (is_left)
+    {
+        vec_st = st_p;
+        vec_ed = t_p;
+    }
+    else
+    {
+        vec_st = t_p;
+        vec_ed = st_p;
+    }
+    // printf("vec_st: %f %f\n", vec_st.x, vec_st.y);
+    // printf("vec_ed: %f %f\n", vec_ed.x, vec_ed.y);
+    jcv_point new_vec = normalize(vec_st, vec_ed);
+    float length_ratio = random_between(
+        0.5 / num_pts,
+        1.0 / num_pts
+    );
+    new_vec.x = new_vec.x * length_ratio * max_length;
+    new_vec.y = new_vec.y * length_ratio * max_length;
+
+    // jcv_point test_vec;
+    // test_vec.x = st_p.x + new_vec.x;
+    // test_vec.y = st_p.y + new_vec.y;
+    // printf("off_vec: %f %f\n", new_vec.x, new_vec.y);
+    // printf("new_point: %f %f\n", test_vec.x, test_vec.y);
+    if (abs(new_vec.x) <= epsilon && abs(new_vec.y) <= epsilon)
+        return ed_p;
+
+    jcv_point result = generate_point_in_poly(
+        st_p, ed_p, site0, site1, new_vec
+    );
+
+    return result;
+}
+
 using alter_points = std::vector<jcv_point>;
-void iter_generate_points(jcv_point p,jcv_point end_p, jcv_point site0, jcv_point site1, size_t total, alter_points &points, bool is_neighbor)
+void iter_generate_points(jcv_point st_p,jcv_point end_p, jcv_point site0, jcv_point site1, size_t total, alter_points &points, float max_length, bool is_neighbor)
 {
     // 递归升成点的函数
     if (total == 0)
-        return;
-    
-    // 如果非凸包则不生成点
-    float a0 = area2(site0, site1, p);
-    float a1 = area2(site0, site1, end_p);
-    if (a0*a1 >= 0.0)
         return;
     
     total = total - 1;
@@ -501,17 +568,14 @@ void iter_generate_points(jcv_point p,jcv_point end_p, jcv_point site0, jcv_poin
         is_neighbor = not is_neighbor;
     }
     
-    jcv_point site_point;
-    if (is_neighbor)
-        site_point = site1;
-    else
-        site_point = site0;
+    // 在site0, site1之间点和st_p构成的向量来生成随机点，这样能更好的控制产生随机点的位置
     // printf("site0: %f %f\n",site0.x, site0.y);
     // printf("site1: %f %f\n",site1.x, site1.y);
     // printf("check site_point: %f %f\n", site_point.x, site_point.y);
-    jcv_point new_pt = random_point(p, end_p, site_point);
-    points.push_back(new_pt);
-    iter_generate_points(new_pt, end_p, site0, site1, total, points, is_neighbor);
+    jcv_point new_pt = random_point(st_p, end_p, site0, site1, max_length, is_neighbor);
+    if (abs(new_pt.x - end_p.x) > epsilon || abs(new_pt.y - end_p.y) > epsilon)
+        points.push_back(new_pt);
+    iter_generate_points(new_pt, end_p, site0, site1, total, points, max_length, is_neighbor);
 }
 
 // 根据graphedge构造一个生成边界点的函数
@@ -536,6 +600,10 @@ static alter_points generate_alter_points(std::unordered_map<std::string, alter_
     jcv_point site1 = edge->neighbor->p;
     size_t total = rand() % num_pts + 2;
     bool is_neighbor = (rand() % 2 > 0);
+    float max_length = distance(
+        edge->pos[0],
+        edge->pos[1]
+    );
     iter_generate_points(
         edge->pos[0],
         edge->pos[1],
@@ -543,6 +611,7 @@ static alter_points generate_alter_points(std::unordered_map<std::string, alter_
         site1,
         total,
         points,
+        max_length,
         is_neighbor
     );
     // size_t max_t = 3;
@@ -585,6 +654,9 @@ static void store_voronoi_diagram(jcv_diagram diagram, size_t width, size_t heig
     for ( int i = 0; i < diagram.numsites; ++i)
     {
         const jcv_site* site = &sites[i];
+        // 测试修改
+        // if(i != 0)
+        //     continue;
         // 这里先hard code 先去除包围点
         if(site->p.x >= 499.0 || site->p.x <= -499.0)
         {
@@ -702,6 +774,9 @@ static void store_voronoi_diagram(jcv_diagram diagram, size_t width, size_t heig
                 }
             }
             edge_pts.push_back(e->pos[1]);
+
+            // 测试修改
+            // break;
 
             if (!is_last_edge)
             {   
