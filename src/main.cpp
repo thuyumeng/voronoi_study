@@ -510,17 +510,34 @@ static jcv_point generate_point(const jcv_point st_p,
     }
     jcv_point vec0 = normalize(st_p, site0);
     jcv_point vec1 = normalize(st_p, site1);
-    float max_vec_ratio = 0.1;
-    float min_vec_ratio = 0.05;
+    float max_vec_ratio = 0.4;
+    float min_vec_ratio = 0.3;
     float cur_ratio = random_between(min_vec_ratio, max_vec_ratio);
     jcv_point other_vec;
+    jcv_point orig_point;
+    jcv_point reverse_vec;
+    orig_point.x = 0;
+    orig_point.y = 0;
     if(is_neighbor)
     {
-        other_vec = vec1;
+        reverse_vec.x = -1.0*vec0.x;
+        reverse_vec.y = -1.0*vec0.y;
+        if(to_left(orig_point, vec1, reverse_vec))
+            other_vec = vec1;
+        else {
+            other_vec = reverse_vec;
+        }
     }
     else
     {
-        other_vec = vec0;
+        reverse_vec.x = -1.0*vec1.x;
+        reverse_vec.y = -1.0*vec1.y;
+        if(!to_left(orig_point, vec0, reverse_vec))
+        {
+            other_vec = vec0;
+        } else {
+            other_vec = reverse_vec;
+        }
     }
     
     float length_ratio = random_between(
