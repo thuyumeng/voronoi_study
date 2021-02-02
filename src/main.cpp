@@ -485,68 +485,53 @@ static jcv_point normalize(const jcv_point st_p, const jcv_point ed_p)
     return normalize_vec;
 }
 
+using alter_points = std::vector<jcv_point>;
 static jcv_point generate_point(const jcv_point st_p, 
                               const jcv_point ed_p,
                               const jcv_point site0, 
                               const jcv_point site1, 
                               float max_length,
-                              bool is_neighbor)
+                              bool is_neighbor,
+                              const alter_points &points)
 {
     
     // 设置偏移向量
-    jcv_point half_pt;
-    half_pt.x = (site0.x + site1.x)*0.5;
-    half_pt.y = (site0.y + site1.y)*0.5;
-    
-    float sign = -1.0;
-    if (is_neighbor)
-        sign = 1.0;
-
-    float min_ratio = 0.01;
-    float max_ratio = 0.05;
-    float alter_ratio = random_between(min_ratio, max_ratio);
-
-    // printf("generate_point :\n");
-    // printf("alter_ratio: %f\n", alter_ratio);
-    // printf("start_p: %f %f\n", st_p.x, st_p.y);
-    // printf("end_p: %f %f\n", ed_p.x, ed_p.y);
-    // printf("site0: %f %f\n",site0.x, site0.y);
-    // printf("site1: %f %f\n",site1.x, site1.y);
-    // 在site0和site1的线段上取一点，和st_p链接做终点
-    jcv_point dir_vec = normalize(site0, site1);
-    float length = distance(site0, site1) * 0.5;
-    jcv_point t_p;
-    t_p.x = half_pt.x + dir_vec.x * alter_ratio * length * sign;
-    t_p.y = half_pt.y + dir_vec.y * alter_ratio * length * sign;
-    // printf("t_p: %f %f\n", t_p.x, t_p.y);
-    // 查看st_p,ed_p, site0, site1是否为凸包
-    bool is_left = to_left(site0, site1, st_p);
-    jcv_point vec_st, vec_ed;
-    if (is_left)
+    jcv_point new_vec;
+    jcv_point cur_vec;
+    if (points.size() >= 2)
     {
-        vec_st = st_p;
-        vec_ed = t_p;
+        size_t last_index = points.size() - 2;
+        jcv_point last_pt = points.at(last_index);
+        cur_vec = normalize(last_pt, st_p);
     }
     else
     {
-        vec_st = t_p;
-        vec_ed = st_p;
+        cur_vec = normalize(st_p, ed_p);
     }
-    // printf("vec_st: %f %f\n", vec_st.x, vec_st.y);
-    // printf("vec_ed: %f %f\n", vec_ed.x, vec_ed.y);
-    jcv_point new_vec = normalize(vec_st, vec_ed);
+    jcv_point vec0 = normalize(st_p, site0);
+    jcv_point vec1 = normalize(st_p, site1);
+    float max_vec_ratio = 0.1;
+    float min_vec_ratio = 0.05;
+    float cur_ratio = random_between(min_vec_ratio, max_vec_ratio);
+    jcv_point other_vec;
+    if(is_neighbor)
+    {
+        other_vec = vec1;
+    }
+    else
+    {
+        other_vec = vec0;
+    }
+    
     float length_ratio = random_between(
         0.5 / num_pts,
         1.0 / num_pts
     );
-    new_vec.x = new_vec.x * length_ratio * max_length;
-    new_vec.y = new_vec.y * length_ratio * max_length;
-
-    // jcv_point test_vec;
-    // test_vec.x = st_p.x + new_vec.x;
-    // test_vec.y = st_p.y + new_vec.y;
-    // printf("off_vec: %f %f\n", new_vec.x, new_vec.y);
-    // printf("new_point: %f %f\n", test_vec.x, test_vec.y);
+    float mult_off = max_length * length_ratio;
+    new_vec.x = cur_ratio*other_vec.x + (1.-cur_ratio)*cur_vec.x;
+    new_vec.x *= mult_off;
+    new_vec.y = cur_ratio*other_vec.y + (1.-cur_ratio)*cur_vec.y;
+    new_vec.y *= mult_off;
     if (abs(new_vec.x) <= epsilon && abs(new_vec.y) <= epsilon)
         return ed_p;
 
@@ -557,7 +542,6 @@ static jcv_point generate_point(const jcv_point st_p,
     return result;
 }
 
-using alter_points = std::vector<jcv_point>;
 void iter_generate_points(jcv_point st_p,jcv_point end_p, jcv_point site0, jcv_point site1, size_t total, alter_points &points, float max_length, bool is_neighbor)
 {
     if (points.size() <= 0)
@@ -579,41 +563,7 @@ void iter_generate_points(jcv_point st_p,jcv_point end_p, jcv_point site0, jcv_p
     // printf("site1: %f %f\n",site1.x, site1.y);
     // printf("check site_point: %f %f\n", site_point.x, site_point.y);
     jcv_point new_pt;
-    if (points.size() <= 1)
-    {
-        new_pt = generate_point(st_p, end_p, site0, site1, max_length, is_neighbor);
-    } else {
-        size_t last_index = points.size() - 2;
-        jcv_point last_pt = points.at(last_index);
-        jcv_point cur_vec = normalize(last_pt, st_p);
-        jcv_point vec0 = normalize(st_p, site0);
-        jcv_point vec1 = normalize(st_p, site1);
-
-        float max_vec_ratio = 0.1;
-        float min_vec_ratio = 0.05;
-        float cur_ratio = random_between(min_vec_ratio, max_vec_ratio);
-        jcv_point new_vec;
-        jcv_point other_vec;
-        if(is_neighbor)
-        {
-            other_vec = vec1;
-        }
-        else
-        {
-            other_vec = vec0;
-        }
-        
-        float length_ratio = random_between(
-            0.5 / num_pts,
-            1.0 / num_pts
-        );
-        float mult_off = max_length * length_ratio;
-        new_vec.x = cur_ratio*other_vec.x + (1.-cur_ratio)*cur_vec.x;
-        new_vec.x *= mult_off;
-        new_vec.y = cur_ratio*other_vec.y + (1.-cur_ratio)*cur_vec.y;
-        new_vec.y *= mult_off;
-        new_pt = generate_point_by_vec(st_p, end_p, site0, site1, new_vec);
-    }
+    new_pt = generate_point(st_p, end_p, site0, site1, max_length, is_neighbor, points);
 
     if (abs(new_pt.x - end_p.x) > epsilon || abs(new_pt.y - end_p.y) > epsilon)
         points.push_back(new_pt);
